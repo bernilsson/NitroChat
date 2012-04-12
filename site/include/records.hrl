@@ -1,0 +1,1 @@
+-record(flash_title, {?ACTION_BASE(action_flash_title), text, user}).

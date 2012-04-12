@@ -1,0 +1,291 @@
+%% -*- mode: nitrogen -*-
+-module (channel).
+-compile(export_all).
+-include_lib("nitrogen/include/wf.hrl").
+-include("records.hrl").
+
+main() ->
+
+    case wf:role(wf:path_info()) of
+%    case true of
+        true ->
+            #template { file="./site/templates/bare.html" };
+        false ->
+            wf:redirect_to_login("/login/" ++ wf:path_info())
+    end.
+
+title() -> "Chat away my friend".
+
+body() -> 
+
+    TU = wf:session(username),
+    wf:state(username,TU),
+    wf:clear_roles(),
+    ?PRINT(["NEW PAGE LOADED2", TU]),
+    restart_comet(TU),
+    wf:wire(#api{ name=apiLogout ,tag=logout}),
+    #panel{id=my_page, body=[
+	#h1 {text="Channel: " ++ wf:path_info()},
+	#panel{id=channel_wrap, body=[
+	    #panel {id=chat, body=[
+	    #textbox { id=msg, text="Your message...", postback=submit , next=msg },
+%	    #button { id=submit, text="Submit", postback=submit },
+	    #panel { id=chatWindow, body=[#span{id=time, text=timestamp()},"  Welcome to ", wf:path_info()]}
+	]}]},
+	
+	#panel{id=sidebar, body=[
+	
+	    #button {text="Log out", postback=log},
+	    #h4 {text="Users"},
+	    #p {id="user0", body=TU}
+	]},
+	#panel { id=placeholder2 }
+    ]}.
+
+restart_comet(MyName) ->
+    {ok,MyPid} = wf:comet_global(fun() -> repeater_start(self(),MyName) end, wf:path_info()),
+    ?PRINT("REstarting COMET"),
+
+    wf:state('MyPid', MyPid),
+    wf:send_global(wf:path_info(),{ping,MyPid,MyName}).
+
+api_event (apiLogout,_,_) ->
+    ?PRINT("API EVENT"),
+    event(log).
+
+event(click) ->
+    Client = wf:state_default("n",0) + 1,
+    Server = wf:session_default("n",0) + 1,
+    wf:update(placeholder, [
+        #h1 { text="Congratulations!" },
+        #p { body="You have updated the page!" },
+        #p { body=io_lib:format("~p", [{Client, Server}]) }
+    ]),
+    wf:state("n",Client),
+    wf:session("n",Server);
+
+
+event(log) ->
+    wf:send_global(wf:path_info(), {'EXIT',wf:state('MyPid'),logout}),
+    
+    wf:redirect_to_login("/login");
+
+event(submit) ->
+    ?PRINT([username, wf:html_encode(wf:q(msg)), wf:state('MyPid')]),
+    check_global_connection(wf:state('MyPid')),
+    wf:wire("obj('msg').value=''"),
+    wf:update(placeholder2,"This request was served by " ++ erlang:atom_to_list(node())),
+    wf:send_global(wf:path_info(), {msg,wf:state('MyPid'),wf:html_encode( wf:q(msg))}).
+
+
+check_global_connection(PID) ->
+    PID ! {ping,self()},
+    receive 
+	{alive} ->
+	    ok
+    after 3000 ->
+	?PRINT(["LOST CONNECTION", PID," ",self()]),
+	wf:send_global(wf:path_info(),{'EXIT',wf:state('MyPid'),logout}),
+	restart_comet(wf:state(username)),
+	wf:remove(".userlist"),
+	wf:flush()
+	
+	
+%	wf:redirect("/channel/" ++ wf:path_info())
+    end.
+	
+	    
+    
+    
+
+repeater_start(ParentPid,Username) ->
+    %%Fixa mig
+    wf:state(userlist, dict:store(self(),{Username, 0},dict:new())),
+    repeater().
+
+repeater() ->
+    
+    % Don't exit on error...
+    process_flag(trap_exit, true),
+    
+    
+    %%?PRINT(["Before first fetch we are ", self(), " Dict is ", Dict]),
+    Dict = wf:state(userlist),
+    {MyName, MyID} = dict:fetch(self(),Dict),
+    
+    
+    %%?PRINT("We never get here"),
+    %?PRINT(["TIME IN REPEATER", erlang:now()]),
+    receive 
+	%%Rewrite into one action
+        {msg, PID,Msg} -> 
+	    {Username,UID} = handle_msg(Dict, MyName, PID),
+	    wf:wire(#flash_title{text=Msg, user=Username}),
+	    ?PRINT("1"),
+	    local_chat(Username,"wfid_user"++io_lib:format("~p",[UID]),Msg),
+	    ?PRINT("2");
+     
+
+
+	{ping,PID} ->
+	    PID ! {alive};
+	{ping,PID,Username} -> 
+	    
+	    Exists = dict:is_key(PID,Dict) or (PID == self()),
+	   % ?PRINT("User " ++ wf:state(username)
+	%	++" Got ping from " ++ Username  ++ erlang:atom_to_list(Exists)),
+	    NewDict = if 
+	 	Exists ->
+		    PID ! {pong,self(),MyName},
+		    Dict;
+	 	true -> 
+	 	    ?PRINT("New member" ++ Username),
+		    %  wf:insert_top(chatWindow,
+	 	%	["<p style=\"margin:0px;\"><em>",
+		    %	    Username ,
+		    %	    "</em> has joined the Chat.</p>"]),
+		    PID ! {pong,self(),MyName},
+		    add_to_sidebar(PID,Username),
+		    wf:update(placeholder2,"This request was served by " ++ erlang:atom_to_list(node())),
+		    local_chat("System","system",Username ++ " has joined the chat"),
+	 	    wf:flush(),
+	 	    dict:store(PID,{Username,dict:size(Dict)},Dict)
+	    end,
+	    restart(NewDict);
+	{pong,PID,Username} ->
+	    %%Someone new, Lets say hi, wait is it us?
+	    %%?PRINT([Dict, wf:state(username) ++ " Fångar en Join från ", Username]),
+	    Exist = (PID == self()) or dict:is_key(PID, Dict),
+	    NewDict = if 
+		Exist ->
+		    %%?PRINT("PONG, Its me"),
+		    %%wf:wire(#alert { text="This is a Javascript Alert" }),
+		    %%wf:flush(),
+		    Dict;
+		true -> 
+		    ?PRINT("PONG, No such user"),
+		    timer:sleep(500),
+		    %wf:send_global(repeater_pool, {ping,wf:session(username)}),
+		   %% PID ! {ping, self(),MyName},
+		 %%   wf:send_global(repeater_pool,
+		%%	{msg,"System", [Username, " has joined the chat"]}),    
+		    local_chat("System","mp_system", [Username, " has joined the chat"]),
+		    add_to_sidebar(PID,Username),
+		    dict:store(PID,{Username,dict:size(Dict)},Dict)
+	    end,
+	    %wf:update(placeholder2, Username),
+	    restart(NewDict);
+	
+	{'EXIT', From, async_die} -> 
+%	    ?PRINT(["Exit message from ",From , aync_die, PP, " ", self()]),
+	    wf:send_global(wf:path_info(), {'EXIT',self(),logout}),
+	    exit(done);
+	{'EXIT',From,logout} ->
+	    ?PRINT(["Got logout from", From, logout, " To", self()]),
+	    case dict:find(From,Dict) of 
+		{_,{Username,_}} -> 
+		    local_chat("System","system",Username ++ " left the chat"),
+		    remove_from_sidebar(From);
+		error -> ?PRINT(["Dict didn't contain ", From, " in Dict ", Dict])
+		    
+	    end,
+	    
+	    
+	    if
+		From == self() ->
+		    ?PRINT("THIS MIGHT BE A LOG OUT"),
+		    exit(done);
+		true -> ?PRINT("Not a logout"),
+		    restart( dict:erase(From,Dict))
+	    end
+
+	    
+    after 10000 -> 
+	    ?PRINT(wf:path_info()),
+	    wf:send_global(wf:path_info(),{ping,self(),MyName})
+    end,
+    restart(Dict).
+    
+handle_msg(Dict, MyName, PID) ->
+    %?PRINT(["PID is ", PID, " And dict is ", Dict, "Dict find returns, "]),
+    case dict:find(PID,Dict) of
+	error -> 
+	    PID ! {ping,self(),MyName},
+	    {"unknown user",255};
+	{ok, UserInfo} -> UserInfo
+    end.
+
+
+restart(NewDict) ->
+    wf:flush(),
+    wf:state(userlist,NewDict),
+    repeater().
+
+
+add_to_sidebar(PID,Username) ->
+		    wf:insert_bottom(sidebar,
+		    ["<p class=\"userlist wfid_user",clean_PID(hd(io_lib:format("~p",[PID]))), "\">",Username, "</p>"]).    
+
+
+clean_PID($>) ->
+    false;
+clean_PID($<) ->
+    false;
+clean_PID($.) ->
+    false;
+clean_PID([A|B]) ->
+    lists:filter(fun (X) -> clean_PID(X) end, [A|B]);
+clean_PID(_) ->
+    true.
+
+			
+
+remove_from_sidebar(PID) ->
+%    ?PRINT([".wfid_user" , hd(io_lib:format("~p",[PID]))]),
+    wf:remove(".wfid_user" ++ clean_PID(hd(io_lib:format("~p",[PID])))).
+local_chat(Username,Class,Message) ->
+    wf:insert_top(chatWindow,
+	["<p class=\"chatMessage ",Class ,"\"><span class=\"wfid_time\">",timestamp(),"</span>" ,"<em>",
+	Username, ": </em><span class=\"",Class, "\">", Message ]).
+
+
+
+counter(Username) ->
+    timer:sleep(1000),
+    wf:update(placeholder2, Username),
+   % wf:send_global(repeater_pool,{ping,Username}),
+    wf:flush(),
+    counter(Username).
+
+%%body() -> "Hello number two!".
+timestamp() ->
+    iso_8601_fmt(erlang:localtime()).
+iso_8601_fmt(DateTime) ->
+    {{_,_,_},{Hour,Min,Sec}} = DateTime,
+    io_lib:format("<~2.10.0B:~2.10.0B:~2.10.0B>",
+        [Hour, Min, Sec]).
+scripts() ->
+   "height = function() {return document.documentElement.clientHeight};
+    width = function() {return document.documentElement.clientWidth};
+    resize_fun = function () 
+    {
+      $('.wfid_chatWindow').css(\"height\", height()*0.80) 
+    };
+    resize_fun();
+    $(window).resize(resize_fun);
+    $(window).bind('beforeunload', function(){ 
+        page.apiLogout();
+        var o = Nitrogen.$event_queue.shift();
+  //      jQuery.extend(o = {ajaxSettings:{async:false}});
+
+//        o.ajaxSettings.async = false;
+        Nitrogen.$do_event(o.validationGroup, o.eventContext, o.extraParam, o.ajaxSettings);
+        /*$.ajax({
+          type: 'POST',
+          async: false,
+          url: '/time',
+          data: 't=' + 1000 
+          });*/
+
+     });
+    ".

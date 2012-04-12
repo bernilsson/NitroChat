@@ -1,0 +1,11 @@
+%% -*- mode: nitrogen -*-
+-module (action_flash_title).
+-compile (export_all).
+-include_lib ("nitrogen/include/wf.hrl").
+-include("records.hrl").
+
+%% Move the following line to records.hrl:
+-record(flash_title, {?ACTION_BASE(action_flash_title), attr1, attr2}).
+
+render_action(_Record = #flash_title{}) ->
+    "alert('Hello, from flash_title!');".
