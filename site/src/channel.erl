@@ -20,7 +20,7 @@ body() ->
 
     TU = wf:session(username),
     wf:state(username,TU),
-%    wf:clear_roles(),
+    wf:clear_roles(),
     ?PRINT(["NEW PAGE LOADED2", TU]),
     restart_comet(TU),
     wf:wire(#api{ name=apiLogout ,tag=logout}),
@@ -30,7 +30,8 @@ body() ->
 	    #panel {id=chat, body=[
 	    #textbox { id=msg, text="Your message...", postback=submit , next=msg },
 %	    #button { id=submit, text="Submit", postback=submit },
-	    #panel { id=chatWindow, body=[#span{id=time, text=timestamp()},"  Welcome to ", wf:path_info()]}
+	    #panel { id=chatWindow, body=[#span{id=time,
+             text=timestamp()},"  Welcome to ", wf:path_info()]}
 	]}]},
 	
 	#panel{id=sidebar, body=[
@@ -84,7 +85,7 @@ check_global_connection(PID) ->
 	{alive} ->
 	    ok
     after 3000 ->
-	?PRINT(["LOST CONNECTION", PID," ",self()]),
+	?PRINT(["LOST CONNECTION", PID," ",self(), wf:path_info()]),
 	wf:send_global(wf:path_info(),{'EXIT',wf:state('MyPid'),logout}),
 	%restart_comet(wf:state(username)),
 	wf:role(wf:path_info(),true),
@@ -270,16 +271,16 @@ scripts() ->
     $(window).bind('beforeunload', function(){ 
         page.apiLogout();
         var o = Nitrogen.$event_queue.shift();
-  //      jQuery.extend(o = {ajaxSettings:{async:false}});
+        //jQuery.extend(o, {ajaxSettings:{async:false}});
 
 //        o.ajaxSettings.async = false;
         Nitrogen.$do_event(o.validationGroup, o.eventContext, o.extraParam, o.ajaxSettings);
-        /*$.ajax({
+          $.ajax({
           type: 'POST',
           async: false,
           url: '/time',
           data: 't=' + 1000 
-          });*/
+          });
 
      });
     ".

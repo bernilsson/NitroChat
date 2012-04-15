@@ -5,7 +5,7 @@
 -include("records.hrl").
 
 main() -> 
-    timer:sleep(3000),
+    timer:sleep(1000),
     [
         "lurad"
     ].
