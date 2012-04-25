@@ -7,7 +7,6 @@
 main() ->
 
     case wf:role(wf:path_info()) of
-%    case true of
         true ->
             #template { file="./site/templates/bare.html" };
         false ->

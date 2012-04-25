@@ -5,7 +5,7 @@
 
 main() -> #template { file="./site/templates/bare.html" }.
 
-title() -> "Welcome to Chatty".
+title() -> "Welcome to NitroChat".
 
 body() ->
     #container_12 { body=[
@@ -14,15 +14,15 @@ body() ->
 
 inner_body() -> 
     [
-     #h1 { text="Welcome to my web server." },
+     #h1 { text = "NitroChat." },
+     #h3 { text = "Welcome to my first project in Erlang and Nitrogen!" },
      #p{body=[
-	      "Please test the chat system I've built!"
-	      , "<br>", atom_to_list(node()), " ", erlang:pid_to_list(self())]},
-     #p{body=["Enter any channel name below:"]},
+	      "NitroChat is my attempt at building a small webchat during a one-week-half-time school project for the course Application Development for the internet"
+	      , "<br> This page was served by ", atom_to_list(node()), ", one of the distributed erlang nodes running this chat. It's pid is ", erlang:pid_to_list(self())]},
+     #p{body=["To join a channel simple enter its name below and click join."]},
      #label{text="Channel"},
      #textbox{id=channelBox, postback=click},
-     #button { id=button, text="Click me!", postback=click }
-     
+     #button { id=button, text="Join", postback=click }
     ].
 
 event(click) ->
